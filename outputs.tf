@@ -18,3 +18,8 @@ output "cloudfront_distribution_id" {
   description = "El ID de la distribución de CloudFront."
   value       = aws_cloudfront_distribution.s3_distribution.id
 }
+
+output "contact_api_endpoint" {
+  description = "Endpoint URL for the Contact Form API"
+  value       = aws_apigatewayv2_api.contact_api.api_endpoint
+}
