@@ -16,3 +16,6 @@ crash.*.log
 .vscode/
 .idea/
 *.swp
+
+# Archivos de backup Terraform
+*.backup

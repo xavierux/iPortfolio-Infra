@@ -23,3 +23,13 @@ output "contact_api_endpoint" {
   description = "Endpoint URL for the Contact Form API"
   value       = aws_apigatewayv2_api.contact_api.api_endpoint
 }
+
+output "route53_zone_id" {
+  description = "El ID de la zona hospedada en Route 53."
+  value       = aws_route53_zone.primary.zone_id
+}
+
+output "route53_name_servers" {
+  description = "Los servidores de nombres de la zona hospedada en Route 53 (configurar en Squarespace)."
+  value       = aws_route53_zone.primary.name_servers
+}

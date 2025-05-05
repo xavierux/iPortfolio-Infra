@@ -69,8 +69,13 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   comment             = "CloudFront distribution for ${var.project_name}"
   default_root_object = "index.html" # Archivo a servir si se pide la raíz "/"
 
+  # Añadir dominios alternativos (CNAMEs)
+  aliases = [var.domain_name, "www.${var.domain_name}"]
+
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn      = aws_acm_certificate.domain_cert.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
   
   default_cache_behavior {
@@ -254,3 +259,77 @@ resource "aws_lambda_permission" "api_gw_lambda_invoke" {
 
 # Para obtener el ID de cuenta actual para el ARN de SES
 data "aws_caller_identity" "current" {}
+
+# --- Zona hospedada en Route 53 ---
+resource "aws_route53_zone" "primary" {
+  name = var.domain_name
+  tags = var.tags
+
+  depends_on = [aws_iam_user_policy_attachment.route53_acm_attach] # Dependencia explícita
+}
+
+# --- Certificado SSL/TLS en ACM (necesario para HTTPS en CloudFront) ---
+resource "aws_acm_certificate" "domain_cert" {
+  domain_name       = var.domain_name
+  validation_method = "DNS"
+
+  # Opcional: Soporte para subdominios como www
+  subject_alternative_names = ["www.${var.domain_name}"]
+
+  tags = var.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [aws_iam_user_policy_attachment.route53_acm_attach] # Dependencia explícita
+}
+
+# --- Registro DNS para validar el certificado ---
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.domain_cert.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  zone_id = aws_route53_zone.primary.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+}
+
+# --- Validación del certificado ---
+resource "aws_acm_certificate_validation" "domain_cert_validation" {
+  certificate_arn         = aws_acm_certificate.domain_cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# --- Registro DNS tipo A (ALIAS) para el dominio raíz ---
+resource "aws_route53_record" "domain_a" {
+  zone_id = aws_route53_zone.primary.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# --- Registro DNS tipo A (ALIAS) para el subdominio www (opcional) ---
+resource "aws_route53_record" "www_a" {
+  zone_id = aws_route53_zone.primary.zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
